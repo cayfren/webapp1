@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Invoice_Bot</title>
+  <style>
+    /* Basic ChatGPT-like minimal style */
+    :root{
+      --bg: #f7f7f8;
+      --panel: #ffffff;
+      --muted: #6b7280;
+      --accent: #10a37f;
+      --msg-left: #ffffff;
+      --msg-right: #ecfdf8;
+    }
+    html,body{height:100%; margin:0; font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif; background:var(--bg); color:#0f172a;}
+    .app {
+      max-width: 900px;
+      height: 100vh;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: 64px 1fr auto;
+      gap: 16px;
+      padding: 18px;
+      box-sizing: border-box;
+    }
+
+    header {
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+    .logo {
+      width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,#0ea5a4,#2563eb);
+      display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:18px;
+    }
+    header h1{font-size:16px;margin:0;}
+    header p{margin:0;color:var(--muted);font-size:13px}
+
+    .chat-panel {
+      background: linear-gradient(#fbfbfc, #fbfbfc);
+      border-radius:12px;
+      padding:16px;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+    }
+
+    .messages {
+      overflow:auto;
+      padding:12px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      scrollbar-width:thin;
+    }
+
+    /* message bubble */
+    .msg {
+      max-width: 78%;
+      padding:12px 14px;
+      border-radius:12px;
+      line-height:1.4;
+      box-shadow: 0 1px 0 rgba(16,24,40,0.02);
+      word-wrap:break-word;
+      white-space:pre-wrap;
+    }
+    .msg.user {
+      align-self:flex-end;
+      background:var(--msg-right);
+      border-bottom-right-radius:6px;
+      border-bottom-left-radius:12px;
+    }
+    .msg.bot {
+      align-self:flex-start;
+      background:var(--msg-left);
+      border-bottom-left-radius:6px;
+      border-bottom-right-radius:12px;
+    }
+    .meta {font-size:12px;color:var(--muted);margin-top:6px;}
+
+    .input-row {
+      display:flex;
+      gap:8px;
+      align-items:end;
+      padding-top:8px;
+    }
+
+    .composer {
+      display:flex;
+      gap:8px;
+      align-items:center;
+      background:var(--panel);
+      padding:10px;
+      border-radius:12px;
+      box-shadow: inset 0 1px 0 rgba(16,24,40,0.03);
+      width:100%;
+    }
+
+    textarea {
+      resize:none;
+      border:0;
+      padding:8px 6px;
+      min-height:48px;
+      max-height:160px;
+      width:100%;
+      font-size:15px;
+      outline:none;
+      background:transparent;
+    }
+
+    .controls {
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+
+    .btn {
+      border:0;
+      padding:8px 12px;
+      border-radius:8px;
+      background:var(--accent);
+      color:white;
+      font-weight:600;
+      cursor:pointer;
+    }
+    .btn.secondary {
+      background:transparent;
+      color:var(--muted);
+      border-radius:8px;
+      padding:6px 8px;
+      border:1px solid rgba(15,23,42,0.04);
+    }
+
+    .file-info {font-size:13px;color:var(--muted);}
+
+    /* download button inside message */
+    .download-btn {
+      display:inline-block;
+      margin-top:8px;
+      padding:8px 10px;
+      border-radius:8px;
+      border:1px solid rgba(15,23,42,0.06);
+      font-size:14px;
+      cursor:pointer;
+      background:#fff;
+    }
+
+    /* typing indicator */
+    .typing {
+      display:inline-flex;
+      gap:4px;
+      align-items:center;
+    }
+    .dot {
+      width:7px;height:7px;border-radius:50%;background:#cbd5e1;opacity:0.85;animation: blink 1s infinite;
+    }
+    .dot:nth-child(2){animation-delay:0.15s}
+    .dot:nth-child(3){animation-delay:0.3s}
+    @keyframes blink {0%,100%{opacity:0.3}50%{opacity:1}}
+
+    /* responsive */
+    @media (max-width:600px){
+      .app{padding:12px}
+      header h1{font-size:14px}
+      .composer{padding:8px}
+      textarea{min-height:44px}
+    }
+  </style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="Invoice_Bot">
+    <header>
+      <div class="logo">C</div>
+      <div>
+        <h1>Invoice_Bot</h1>
+        <p>Create Invoice, Quotations, Purchase Orders using natural text messages</p>
+      </div>
+    </header>
+
+    <main class="chat-panel" id="chatPanel">
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <div id="bottomSentinel" style="height:1px;"></div>
+    </main>
+
+    <form id="composerForm" class="input-row" onsubmit="return false;">
+      <div class="composer" role="group" aria-label="Message composer">
+        <textarea id="messageInput" placeholder="Type your message..." aria-label="Message input"></textarea>
+        <div class="controls">
+          <label class="secondary btn" for="fileInput" title="Attach a PDF or XLSX file">Attach</label>
+          <input id="fileInput" type="file" accept=".pdf,application/pdf, .xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" />
+          <button id="sendBtn" class="btn" type="button">Send</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+        <div id="filePreview" class="file-info" aria-live="polite"></div>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    // Generate chat ID once per session
+  const chatId = 'chat-' + Math.floor(Math.random() * 1000000);
+    /***************************************
+     * CONFIG: set your webhook URL here
+     * It will POST FormData { message, file }
+     ***************************************/
+    const webhookURL = "https://quincy-unsyllogistic-carl.ngrok-free.dev/webhook/30a199d8-33f4-4416-899e-e6f0bf253075"; // <-- set this
+
+    // DOM elements
+    const messagesEl = document.getElementById('messages');
+    const messageInput = document.getElementById('messageInput');
+    const fileInput = document.getElementById('fileInput');
+    const filePreview = document.getElementById('filePreview');
+    const sendBtn = document.getElementById('sendBtn');
+    const bottomSentinel = document.getElementById('bottomSentinel');
+
+    let selectedFile = null;
+    let waitingForResponse = false;
+
+    // helpers to create message nodes
+    function createMessageNode({text='', role='bot', meta=null}) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
+      if (text) wrapper.textContent = text;
+      if (meta) {
+        const m = document.createElement('div');
+        m.className = 'meta';
+        m.textContent = meta;
+        wrapper.appendChild(m);
+      }
+      return wrapper;
+    }
+
+    function appendMessage(node) {
+      messagesEl.appendChild(node);
+      // auto-scroll to bottom smoothly
+      node.scrollIntoView({behavior:'smooth', block:'end'});
+    }
+
+    // Show file name when attached
+    fileInput.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) {
+        selectedFile = null;
+        filePreview.textContent = '';
+        return;
+      }
+      // validate file types allowed
+      const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+      if (!allowed.includes(f.type) && !f.name.match(/\.pdf$|\.xlsx$/i)) {
+        alert('Only PDF or XLSX files are allowed.');
+        fileInput.value = '';
+        selectedFile = null;
+        filePreview.textContent = '';
+        return;
+      }
+      selectedFile = f;
+      filePreview.textContent = `Attached: ${f.name} (${formatBytes(f.size)})`;
+    });
+
+// send on click or Enter (but allow Shift+Enter for new line)
+sendBtn.addEventListener('click', send);
+
+messageInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault(); // prevent newline
+    send();
+  }
+});
+
+
+    function formatBytes(bytes, decimals=2) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const dm = decimals < 0 ? 0 : decimals;
+      const sizes = ['B','KB','MB','GB','TB'];
+      const i = Math.floor(Math.log(bytes)/Math.log(k));
+      return parseFloat((bytes/Math.pow(k,i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    // Add typing indicator
+    function createTypingNode() {
+      const n = document.createElement('div');
+      n.className = 'msg bot';
+      n.innerHTML = '<div class="typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>';
+      return n;
+    }
+
+    async function send() {
+      if (waitingForResponse) return; // avoid duplicate sends
+      const text = messageInput.value.trim();
+      if (!text && !selectedFile) {
+        alert('Please enter a message or attach a file.');
+        return;
+      }
+
+      // Show user message immediately
+      const userNode = createMessageNode({text, role:'user'});
+      appendMessage(userNode);
+
+      // clear input
+      messageInput.value = '';
+      fileInput.value = '';
+      filePreview.textContent = '';
+      const fileToSend = selectedFile;
+      selectedFile = null;
+
+      // show typing
+      const typingNode = createTypingNode();
+      appendMessage(typingNode);
+
+      waitingForResponse = true;
+      sendBtn.disabled = true;
+
+      try {
+        const form = new FormData();
+        form.append('chatId', chatId);
+        form.append('message', text);
+        if (fileToSend) form.append('file', fileToSend, fileToSend.name);
+
+        // Post to webhookURL (expects the webhook accepts multipart/form-data)
+        const resp = await fetch(webhookURL, {
+          method: 'POST',
+          body: form
+        });
+
+        // Remove typing node (we'll append response nodes)
+        typingNode.remove();
+
+        // Try to interpret response:
+        // 1) If JSON, parse and show textual responses and/or base64 file payloads if present.
+        // 2) If not JSON, treat as binary -> create blob and provide download.
+        const contentType = resp.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json') || contentType.includes('text/json')) {
+          const json = await resp.json();
+          handleJsonResponse(json);
+        } else if (contentType.includes('text/') || contentType.includes('application/') && contentType.includes('json')===false) {
+          // Some webhooks return text (like plain text message)
+          const textResp = await resp.text();
+          appendMessage(createMessageNode({text: textResp, role:'bot'}));
+        } else {
+          // Treat as binary: get blob and show download button
+          const blob = await resp.blob();
+          const filename = extractFilenameFromContentDisposition(resp.headers.get('content-disposition')) || 'file';
+          appendMessage(createFileMessage(blob, filename));
+        }
+      } catch (err) {
+        typingNode.remove();
+        appendMessage(createMessageNode({text: 'Error: ' + (err.message || String(err)), role:'bot'}));
+        console.error('Send error', err);
+      } finally {
+        waitingForResponse = false;
+        sendBtn.disabled = false;
+      }
+    }
+
+    // Attempt to extract a filename from a Content-Disposition header
+    function extractFilenameFromContentDisposition(cd) {
+      if (!cd) return null;
+      const m = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+
+    // Given a JSON response, show messages and any base64 files
+    function handleJsonResponse(json) {
+      // Heuristics:
+      // If json has 'messages' array -> display each (string or {role,text})
+      // If json has 'message' -> display it
+      // If json has 'file' or 'file_base64' or 'fileData' -> handle file
+      // If json is a plain string (rare after json parse) -> show it
+
+      // 1) messages array
+      if (Array.isArray(json.messages)) {
+        for (const m of json.messages) {
+          if (typeof m === 'string') appendMessage(createMessageNode({text: m, role:'bot'}));
+          else if (m?.text) appendMessage(createMessageNode({text: m.text, role: m.role || 'bot'}));
+          else appendMessage(createMessageNode({text: JSON.stringify(m), role:'bot'}));
+          // check for attached file in each message
+          if (m?.file || m?.file_base64 || m?.base64 || m?.content) {
+            tryHandleFileEntry(m);
+          }
+        }
+        return;
+      }
+
+      // 2) file fields directly in JSON
+      if (json.file || json.file_base64 || json.base64 || json.content) {
+        tryHandleFileEntry(json);
+      }
+
+      // 3) single message fields
+      if (json.message || json.text) {
+        const text = json.message || json.text;
+        appendMessage(createMessageNode({text: String(text), role:'bot'}));
+      } else {
+        // fallback: show the JSON prettified
+        appendMessage(createMessageNode({text: JSON.stringify(json, null, 2), role:'bot'}));
+      }
+
+      // 4) also check nested possible file arrays
+      if (Array.isArray(json.files)) {
+        for (const f of json.files) tryHandleFileEntry(f);
+      }
+    }
+
+    // Attempt to handle a file-like entry in JSON
+    function tryHandleFileEntry(obj) {
+      // Possible shapes:
+      // { file_base64: "...", filename: "out.pdf", content_type: "application/pdf" }
+      // { base64: "...", name: "sheet.xlsx" }
+      // { content: <base64 or numeric array>, filename: "...", mime: "..." }
+      // Or an array of bytes: content_bytes: [34,56,...]
+      const base64Fields = ['file_base64','base64','content','data'];
+      for (const key of base64Fields) {
+        if (typeof obj[key] === 'string' && looksLikeBase64(obj[key])) {
+          const b64 = stripDataPrefix(obj[key]);
+          const filename = obj.filename || obj.name || obj.fileName || 'file';
+          const mime = obj.content_type || obj.mime || obj.contentType || detectMimeFromName(filename) || 'application/octet-stream';
+          const blob = base64ToBlob(b64, mime);
+          appendMessage(createFileMessage(blob, filename));
+          return;
+        }
+      }
+
+      // If numeric array present
+      if (Array.isArray(obj.content_bytes) && obj.content_bytes.length) {
+        const uint8 = new Uint8Array(obj.content_bytes);
+        const mime = obj.content_type || detectMimeFromName(obj.filename || obj.name) || 'application/octet-stream';
+        const blob = new Blob([uint8], {type:mime});
+        appendMessage(createFileMessage(blob, obj.filename || obj.name || 'file'));
+        return;
+      }
+
+      // if object has url (maybe server returned a URL to file)
+      if (obj.url && typeof obj.url === 'string') {
+        // show as link
+        const node = createMessageNode({text: 'File available: ' + obj.url, role:'bot'});
+        const link = document.createElement('a');
+        link.href = obj.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'Open file';
+        link.style.display = 'inline-block';
+        link.style.marginTop = '8px';
+        node.appendChild(link);
+        appendMessage(node);
+        return;
+      }
+    }
+
+    // Very small heuristic to detect base64-looking strings
+    function looksLikeBase64(s) {
+      if (typeof s !== 'string') return false;
+      // if it starts "data:" or contains only base64 chars
+      if (s.trim().startsWith('data:')) return true;
+      // otherwise check length and alphabet
+      const clean = s.replace(/\\s+/g,'');
+      if (clean.length < 50) return false; // small heuristic threshold
+      return /^[A-Za-z0-9+/=\\n\\r]+$/.test(clean);
+    }
+
+    function stripDataPrefix(s) {
+      if (!s) return s;
+      const m = /^data:([^;]+);base64,(.*)$/.exec(s);
+      if (m) return m[2];
+      // remove whitespace/newlines
+      return s.replace(/\\s+/g,'');
+    }
+
+    // convert base64 -> Blob
+    function base64ToBlob(base64, mime) {
+      const binStr = atob(base64);
+      const len = binStr.length;
+      const arr = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        arr[i] = binStr.charCodeAt(i);
+      }
+      return new Blob([arr], {type: mime});
+    }
+
+    // detect mime type from filename extension (basic)
+    function detectMimeFromName(name) {
+      if (!name) return null;
+      const lower = name.toLowerCase();
+      if (lower.endsWith('.pdf')) return 'application/pdf';
+      if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      if (lower.endsWith('.xls')) return 'application/vnd.ms-excel';
+      if (lower.endsWith('.csv')) return 'text/csv';
+      return null;
+    }
+
+    // create a message node that includes a download button for the blob
+    function createFileMessage(blob, filename) {
+      const node = document.createElement('div');
+      node.className = 'msg bot';
+      const title = document.createElement('div');
+      title.textContent = 'File received: ' + (filename || 'file');
+      node.appendChild(title);
+
+      const info = document.createElement('div');
+      info.className = 'meta';
+      info.textContent = `${filename || 'file'} — ${formatBytes(blob.size)}`;
+      node.appendChild(info);
+
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'download-btn';
+      dlBtn.textContent = 'Download File';
+      dlBtn.addEventListener('click', () => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename || 'file';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // revoke after a short delay
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      });
+      node.appendChild(dlBtn);
+      return node;
+    }
+
+    // If the webhook returns a raw blob response (e.g., PDF), create message
+    function createFileMessageFromBlob(blob, filename) {
+      return createFileMessage(blob, filename);
+    }
+
+    // observe bottomSentinel to keep chat scrolled to bottom on new messages
+    const observer = new MutationObserver(() => {
+      bottomSentinel.scrollIntoView({behavior:'smooth', block:'end'});
+    });
+    observer.observe(messagesEl, {childList:true, subtree:false});
+
+    // initial welcome message
+    appendMessage(createMessageNode({text: 'Connected.', role:'bot'}));
+
+    // Accessibility: focus on textarea on load
+    messageInput.focus();
+  </script>
+</body>
+</html>
+

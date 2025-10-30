@@ -432,7 +432,68 @@
         showConfirmationMode(json);
         return;
       }
+function handleJsonResponse(json) {
+  // Check if this response requires confirmation
+  if (json.awaiting_confirmation === true) {
+    appendMessage(createMessageNode({text: json.message || 'Please confirm', role:'bot'}));
+    showConfirmationMode(json);
+    return;
+  }
 
+  // CHECK FOR FILE - ADD THIS
+  if (json.file_base64 || json.base64) {
+    const base64 = json.file_base64 || json.base64;
+    const filename = json.filename || 'invoice.pdf';
+    const mime = json.content_type || 'application/pdf';
+    const blob = base64ToBlob(base64, mime);
+    appendMessage(createFileMessage(blob, filename));
+    return;
+  }
+
+  // Normal message handling
+  if (json.message || json.text) {
+    const text = json.message || json.text;
+    appendMessage(createMessageNode({text: String(text), role:'bot'}));
+  } else {
+    appendMessage(createMessageNode({text: JSON.stringify(json, null, 2), role:'bot'}));
+  }
+}
+
+// ADD THESE HELPER FUNCTIONS
+function base64ToBlob(base64, mime) {
+  const binStr = atob(base64);
+  const len = binStr.length;
+  const arr = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    arr[i] = binStr.charCodeAt(i);
+  }
+  return new Blob([arr], {type: mime});
+}
+
+function createFileMessage(blob, filename) {
+  const node = document.createElement('div');
+  node.className = 'msg bot';
+  const title = document.createElement('div');
+  title.textContent = 'Invoice created: ' + filename;
+  node.appendChild(title);
+
+  const dlBtn = document.createElement('button');
+  dlBtn.className = 'download-btn';
+  dlBtn.textContent = 'Download PDF';
+  dlBtn.addEventListener('click', () => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  });
+  node.appendChild(dlBtn);
+  return node;
+}
+      
       // Normal message handling
       if (json.message || json.text) {
         const text = json.message || json.text;
@@ -452,3 +513,4 @@
   </script>
 </body>
 </html>
+

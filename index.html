@@ -244,7 +244,7 @@
 
     let selectedFile = null;
     let waitingForResponse = false;
-    let pendingConfirmation = null; // stores {customer_id, confirmation_type, etc.}
+    let pendingConfirmation = null;
 
     function createMessageNode({text='', role='bot', meta=null}) {
       const wrapper = document.createElement('div');
@@ -264,7 +264,6 @@
       node.scrollIntoView({behavior:'smooth', block:'end'});
     }
 
-    // Show/hide confirmation buttons
     function showConfirmationMode(data) {
       normalComposer.classList.add('hidden');
       confirmationComposer.classList.remove('hidden');
@@ -277,33 +276,28 @@
       pendingConfirmation = null;
     }
 
-    // YES button handler
     yesBtn.addEventListener('click', async () => {
       if (!pendingConfirmation) return;
       
-      // Show user clicked YES
       appendMessage(createMessageNode({text: 'YES', role:'user'}));
       
-      // Prepare confirmation payload
       const payload = {
         chatId: chatId,
         message: 'yes',
         confirmation_type: pendingConfirmation.confirmation_type,
-        customer_id: pendingConfirmation.customer_id || null
+        customer_id: pendingConfirmation.customer_id || null,
+        invoice_id: pendingConfirmation.invoice_id || null
       };
       
       hideConfirmationMode();
       await sendToWebhook(payload);
     });
 
-    // NO button handler
     noBtn.addEventListener('click', async () => {
       if (!pendingConfirmation) return;
       
-      // Show user clicked NO
       appendMessage(createMessageNode({text: 'NO', role:'user'}));
       
-      // Prepare rejection payload
       const payload = {
         chatId: chatId,
         message: 'no',
@@ -395,6 +389,7 @@
         form.append('message', payload.message);
         if (payload.confirmation_type) form.append('confirmation_type', payload.confirmation_type);
         if (payload.customer_id) form.append('customer_id', payload.customer_id);
+        if (payload.invoice_id) form.append('invoice_id', payload.invoice_id);
         if (file) form.append('file', file, file.name);
 
         const resp = await fetch(webhookURL, {
@@ -424,24 +419,21 @@
     }
 
     function handleJsonResponse(json) {
-      // Check if this response requires confirmation
       if (json.awaiting_confirmation === true) {
         appendMessage(createMessageNode({text: json.message || 'Please confirm', role:'bot'}));
         showConfirmationMode(json);
         return;
       }
 
-      // Check for file
       if (json.file_base64 || json.base64) {
         const base64 = json.file_base64 || json.base64;
-        const filename = json.filename || 'invoice.pdf';
+        const filename = json.filename || 'document.pdf';
         const mime = json.content_type || 'application/pdf';
         const blob = base64ToBlob(base64, mime);
         appendMessage(createFileMessage(blob, filename));
         return;
       }
 
-      // Normal message handling
       if (json.message || json.text) {
         const text = json.message || json.text;
         appendMessage(createMessageNode({text: String(text), role:'bot'}));
@@ -464,7 +456,32 @@
       const node = document.createElement('div');
       node.className = 'msg bot';
       const title = document.createElement('div');
-      title.textContent = 'Invoice created: ' + filename;
+      
+      // Detect document type from filename
+      let docType = 'Requested document';
+      let action = 'ready';
+      
+      if (filename.startsWith('INV-')) {
+        docType = 'Invoice';
+        action = 'created';
+      } else if (filename.startsWith('QT-')) {
+        docType = 'Quotation';
+        action = 'created';
+      } else if (filename.startsWith('PO-')) {
+        docType = 'Purchase Order';
+        action = 'created';
+      } else if (filename.toLowerCase().includes('invoice')) {
+        docType = 'Invoice';
+        action = 'created';
+      } else if (filename.toLowerCase().includes('quotation') || filename.toLowerCase().includes('quote')) {
+        docType = 'Quotation';
+        action = 'created';
+      } else if (filename.toLowerCase().includes('purchase')) {
+        docType = 'Purchase Order';
+        action = 'created';
+      }
+      
+      title.textContent = docType + ' ' + action + ': ' + filename;
       node.appendChild(title);
 
       const dlBtn = document.createElement('button');
@@ -494,6 +511,3 @@
   </script>
 </body>
 </html>
-
-
-

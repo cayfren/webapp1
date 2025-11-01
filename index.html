@@ -1,513 +1,64 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Accounts-AI</title>
-  <link rel="icon" type="image/jpeg" href="icon.jpg">
-  <style>
-    :root{
-      --bg: #f7f7f8;
-      --panel: #ffffff;
-      --muted: #6b7280;
-      --accent: #10a37f;
-      --msg-left: #ffffff;
-      --msg-right: #ecfdf8;
-    }
-    html,body{height:100%; margin:0; font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif; background:var(--bg); color:#0f172a;}
-    .app {
-      max-width: 900px;
-      height: 100vh;
-      margin: 0 auto;
-      display: grid;
-      grid-template-rows: 64px 1fr auto;
-      gap: 16px;
-      padding: 18px;
-      box-sizing: border-box;
-    }
+// Replace the YES button event listener in your webapp with this:
 
-    header {display:flex; align-items:center; gap:12px;}
-    .logo {
-      width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,#0ea5a4,#2563eb);
-      display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:18px;
-    }
-    header h1{font-size:16px;margin:0;}
-    header p{margin:0;color:var(--muted);font-size:13px}
+yesBtn.addEventListener('click', async () => {
+  if (!pendingConfirmation) return;
+  
+  appendMessage(createMessageNode({text: 'YES', role:'user'}));
+  
+  const payload = {
+    chatId: chatId,
+    message: 'yes',
+    confirmation_type: pendingConfirmation.confirmation_type,
+    customer_id: pendingConfirmation.customer_id || null,
+    vendor_id: pendingConfirmation.vendor_id || null,  // ADD THIS LINE
+    invoice_id: pendingConfirmation.invoice_id || null
+  };
+  
+  hideConfirmationMode();
+  await sendToWebhook(payload);
+});
 
-    .chat-panel {
-      background: linear-gradient(#fbfbfc, #fbfbfc);
-      border-radius:12px;
-      padding:16px;
-      display:flex;
-      flex-direction:column;
-      overflow:hidden;
-      box-shadow: 0 1px 0 rgba(0,0,0,0.04);
-    }
+// And update the sendToWebhook function to include vendor_id:
 
-    .messages {
-      overflow:auto;
-      padding:12px;
-      display:flex;
-      flex-direction:column;
-      gap:12px;
-      scrollbar-width:thin;
-    }
+async function sendToWebhook(payload, file = null) {
+  const typingNode = createTypingNode();
+  appendMessage(typingNode);
 
-    .msg {
-      max-width: 78%;
-      padding:12px 14px;
-      border-radius:12px;
-      line-height:1.4;
-      box-shadow: 0 1px 0 rgba(16,24,40,0.02);
-      word-wrap:break-word;
-      white-space:pre-wrap;
-    }
-    .msg.user {
-      align-self:flex-end;
-      background:var(--msg-right);
-      border-bottom-right-radius:6px;
-      border-bottom-left-radius:12px;
-    }
-    .msg.bot {
-      align-self:flex-start;
-      background:var(--msg-left);
-      border-bottom-left-radius:6px;
-      border-bottom-right-radius:12px;
-    }
-    .meta {font-size:12px;color:var(--muted);margin-top:6px;}
+  waitingForResponse = true;
+  sendBtn.disabled = true;
 
-    .input-row {
-      display:flex;
-      gap:8px;
-      align-items:end;
-      padding-top:8px;
-    }
+  try {
+    const form = new FormData();
+    form.append('chatId', payload.chatId);
+    form.append('message', payload.message);
+    if (payload.confirmation_type) form.append('confirmation_type', payload.confirmation_type);
+    if (payload.customer_id) form.append('customer_id', payload.customer_id);
+    if (payload.vendor_id) form.append('vendor_id', payload.vendor_id);  // ADD THIS LINE
+    if (payload.invoice_id) form.append('invoice_id', payload.invoice_id);
+    if (file) form.append('file', file, file.name);
 
-    .composer {
-      display:flex;
-      gap:8px;
-      align-items:center;
-      background:var(--panel);
-      padding:10px;
-      border-radius:12px;
-      box-shadow: inset 0 1px 0 rgba(16,24,40,0.03);
-      width:100%;
-    }
-
-    textarea {
-      resize:none;
-      border:0;
-      padding:8px 6px;
-      min-height:48px;
-      max-height:160px;
-      width:100%;
-      font-size:15px;
-      outline:none;
-      background:transparent;
-    }
-
-    .controls {
-      display:flex;
-      gap:8px;
-      align-items:center;
-    }
-
-    .btn {
-      border:0;
-      padding:8px 12px;
-      border-radius:8px;
-      background:var(--accent);
-      color:white;
-      font-weight:600;
-      cursor:pointer;
-    }
-    .btn.secondary {
-      background:transparent;
-      color:var(--muted);
-      border-radius:8px;
-      padding:6px 8px;
-      border:1px solid rgba(15,23,42,0.04);
-    }
-    .btn.danger {
-      background:#ef4444;
-      color:white;
-    }
-
-    /* YES/NO confirmation buttons */
-    .confirmation-buttons {
-      display:flex;
-      gap:12px;
-      justify-content:center;
-      padding:12px;
-    }
-    .confirm-btn {
-      padding:12px 24px;
-      border-radius:8px;
-      border:0;
-      font-weight:600;
-      font-size:15px;
-      cursor:pointer;
-      min-width:100px;
-    }
-    .confirm-btn.yes {
-      background:#10a37f;
-      color:white;
-    }
-    .confirm-btn.no {
-      background:#ef4444;
-      color:white;
-    }
-
-    .file-info {font-size:13px;color:var(--muted);}
-    .download-btn {
-      display:inline-block;
-      margin-top:8px;
-      padding:8px 10px;
-      border-radius:8px;
-      border:1px solid rgba(15,23,42,0.06);
-      font-size:14px;
-      cursor:pointer;
-      background:#fff;
-    }
-
-    .typing {display:inline-flex; gap:4px; align-items:center;}
-    .dot {
-      width:7px;height:7px;border-radius:50%;background:#cbd5e1;opacity:0.85;animation: blink 1s infinite;
-    }
-    .dot:nth-child(2){animation-delay:0.15s}
-    .dot:nth-child(3){animation-delay:0.3s}
-    @keyframes blink {0%,100%{opacity:0.3}50%{opacity:1}}
-
-    .hidden {display:none !important;}
-
-    @media (max-width:600px){
-      .app{padding:12px}
-      header h1{font-size:14px}
-      .composer{padding:8px}
-      textarea{min-height:44px}
-    }
-  </style>
-</head>
-<body>
-  <div class="app" role="application" aria-label="Invoice_Bot">
-    <header>
-      <div class="logo">C</div>
-      <div>
-        <h1>Accounts-AI</h1>
-        <p>Create Invoice, Quotations, Purchase Orders using natural text messages</p>
-      </div>
-    </header>
-
-    <main class="chat-panel" id="chatPanel">
-      <div id="messages" class="messages" aria-live="polite"></div>
-      <div id="bottomSentinel" style="height:1px;"></div>
-    </main>
-
-    <form id="composerForm" class="input-row" onsubmit="return false;">
-      <!-- Normal input mode -->
-      <div id="normalComposer" class="composer" role="group" aria-label="Message composer">
-        <textarea id="messageInput" placeholder="Type your message..." aria-label="Message input"></textarea>
-        <div class="controls">
-          <label class="secondary btn" for="fileInput" title="Attach a PDF or XLSX file">Attach</label>
-          <input id="fileInput" type="file" accept=".pdf,application/pdf, .xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" />
-          <button id="sendBtn" class="btn" type="button">Send</button>
-        </div>
-      </div>
-
-      <!-- Confirmation mode (YES/NO buttons) -->
-      <div id="confirmationComposer" class="confirmation-buttons hidden">
-        <button id="yesBtn" class="confirm-btn yes">YES</button>
-        <button id="noBtn" class="confirm-btn no">NO</button>
-      </div>
-
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-        <div id="filePreview" class="file-info" aria-live="polite"></div>
-      </div>
-    </form>
-  </div>
-
-  <script>
-    const chatId = 'chat-' + Math.floor(Math.random() * 1000000);
-    const webhookURL = "https://groovier-gideon-nonsuccessive.ngrok-free.dev/webhook-test/0c26498e-d87c-40aa-a2c5-40b0fb7aa272";
-
-    // DOM elements
-    const messagesEl = document.getElementById('messages');
-    const messageInput = document.getElementById('messageInput');
-    const fileInput = document.getElementById('fileInput');
-    const filePreview = document.getElementById('filePreview');
-    const sendBtn = document.getElementById('sendBtn');
-    const bottomSentinel = document.getElementById('bottomSentinel');
-    const normalComposer = document.getElementById('normalComposer');
-    const confirmationComposer = document.getElementById('confirmationComposer');
-    const yesBtn = document.getElementById('yesBtn');
-    const noBtn = document.getElementById('noBtn');
-
-    let selectedFile = null;
-    let waitingForResponse = false;
-    let pendingConfirmation = null;
-
-    function createMessageNode({text='', role='bot', meta=null}) {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
-      if (text) wrapper.textContent = text;
-      if (meta) {
-        const m = document.createElement('div');
-        m.className = 'meta';
-        m.textContent = meta;
-        wrapper.appendChild(m);
-      }
-      return wrapper;
-    }
-
-    function appendMessage(node) {
-      messagesEl.appendChild(node);
-      node.scrollIntoView({behavior:'smooth', block:'end'});
-    }
-
-    function showConfirmationMode(data) {
-      normalComposer.classList.add('hidden');
-      confirmationComposer.classList.remove('hidden');
-      pendingConfirmation = data;
-    }
-
-    function hideConfirmationMode() {
-      normalComposer.classList.remove('hidden');
-      confirmationComposer.classList.add('hidden');
-      pendingConfirmation = null;
-    }
-
-    yesBtn.addEventListener('click', async () => {
-      if (!pendingConfirmation) return;
-      
-      appendMessage(createMessageNode({text: 'YES', role:'user'}));
-      
-      const payload = {
-        chatId: chatId,
-        message: 'yes',
-        confirmation_type: pendingConfirmation.confirmation_type,
-        customer_id: pendingConfirmation.customer_id || null,
-        invoice_id: pendingConfirmation.invoice_id || null
-      };
-      
-      hideConfirmationMode();
-      await sendToWebhook(payload);
+    const resp = await fetch(webhookURL, {
+      method: 'POST',
+      body: form
     });
 
-    noBtn.addEventListener('click', async () => {
-      if (!pendingConfirmation) return;
-      
-      appendMessage(createMessageNode({text: 'NO', role:'user'}));
-      
-      const payload = {
-        chatId: chatId,
-        message: 'no',
-        confirmation_type: pendingConfirmation.confirmation_type
-      };
-      
-      hideConfirmationMode();
-      await sendToWebhook(payload);
-    });
+    typingNode.remove();
 
-    fileInput.addEventListener('change', (e) => {
-      const f = e.target.files && e.target.files[0];
-      if (!f) {
-        selectedFile = null;
-        filePreview.textContent = '';
-        return;
-      }
-      const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
-      if (!allowed.includes(f.type) && !f.name.match(/\.pdf$|\.xlsx$/i)) {
-        alert('Only PDF or XLSX files are allowed.');
-        fileInput.value = '';
-        selectedFile = null;
-        filePreview.textContent = '';
-        return;
-      }
-      selectedFile = f;
-      filePreview.textContent = `Attached: ${f.name} (${formatBytes(f.size)})`;
-    });
+    const contentType = resp.headers.get('content-type') || '';
 
-    sendBtn.addEventListener('click', send);
-    messageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        send();
-      }
-    });
-
-    function formatBytes(bytes, decimals=2) {
-      if (bytes === 0) return '0 B';
-      const k = 1024;
-      const dm = decimals < 0 ? 0 : decimals;
-      const sizes = ['B','KB','MB','GB','TB'];
-      const i = Math.floor(Math.log(bytes)/Math.log(k));
-      return parseFloat((bytes/Math.pow(k,i)).toFixed(dm)) + ' ' + sizes[i];
+    if (contentType.includes('application/json') || contentType.includes('text/json')) {
+      const json = await resp.json();
+      handleJsonResponse(json);
+    } else {
+      const textResp = await resp.text();
+      appendMessage(createMessageNode({text: textResp, role:'bot'}));
     }
-
-    function createTypingNode() {
-      const n = document.createElement('div');
-      n.className = 'msg bot';
-      n.innerHTML = '<div class="typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>';
-      return n;
-    }
-
-    async function send() {
-      if (waitingForResponse) return;
-      const text = messageInput.value.trim();
-      if (!text && !selectedFile) {
-        alert('Please enter a message or attach a file.');
-        return;
-      }
-
-      const userNode = createMessageNode({text, role:'user'});
-      appendMessage(userNode);
-
-      messageInput.value = '';
-      fileInput.value = '';
-      filePreview.textContent = '';
-      const fileToSend = selectedFile;
-      selectedFile = null;
-
-      const payload = {
-        chatId: chatId,
-        message: text
-      };
-
-      await sendToWebhook(payload, fileToSend);
-    }
-
-    async function sendToWebhook(payload, file = null) {
-      const typingNode = createTypingNode();
-      appendMessage(typingNode);
-
-      waitingForResponse = true;
-      sendBtn.disabled = true;
-
-      try {
-        const form = new FormData();
-        form.append('chatId', payload.chatId);
-        form.append('message', payload.message);
-        if (payload.confirmation_type) form.append('confirmation_type', payload.confirmation_type);
-        if (payload.customer_id) form.append('customer_id', payload.customer_id);
-        if (payload.invoice_id) form.append('invoice_id', payload.invoice_id);
-        if (file) form.append('file', file, file.name);
-
-        const resp = await fetch(webhookURL, {
-          method: 'POST',
-          body: form
-        });
-
-        typingNode.remove();
-
-        const contentType = resp.headers.get('content-type') || '';
-
-        if (contentType.includes('application/json') || contentType.includes('text/json')) {
-          const json = await resp.json();
-          handleJsonResponse(json);
-        } else {
-          const textResp = await resp.text();
-          appendMessage(createMessageNode({text: textResp, role:'bot'}));
-        }
-      } catch (err) {
-        typingNode.remove();
-        appendMessage(createMessageNode({text: 'Error: ' + (err.message || String(err)), role:'bot'}));
-        console.error('Send error', err);
-      } finally {
-        waitingForResponse = false;
-        sendBtn.disabled = false;
-      }
-    }
-
-    function handleJsonResponse(json) {
-      if (json.awaiting_confirmation === true) {
-        appendMessage(createMessageNode({text: json.message || 'Please confirm', role:'bot'}));
-        showConfirmationMode(json);
-        return;
-      }
-
-      if (json.file_base64 || json.base64) {
-        const base64 = json.file_base64 || json.base64;
-        const filename = json.filename || 'document.pdf';
-        const mime = json.content_type || 'application/pdf';
-        const blob = base64ToBlob(base64, mime);
-        appendMessage(createFileMessage(blob, filename));
-        return;
-      }
-
-      if (json.message || json.text) {
-        const text = json.message || json.text;
-        appendMessage(createMessageNode({text: String(text), role:'bot'}));
-      } else {
-        appendMessage(createMessageNode({text: JSON.stringify(json, null, 2), role:'bot'}));
-      }
-    }
-
-    function base64ToBlob(base64, mime) {
-      const binStr = atob(base64);
-      const len = binStr.length;
-      const arr = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        arr[i] = binStr.charCodeAt(i);
-      }
-      return new Blob([arr], {type: mime});
-    }
-
-    function createFileMessage(blob, filename) {
-      const node = document.createElement('div');
-      node.className = 'msg bot';
-      const title = document.createElement('div');
-      
-      // Detect document type from filename
-      let docType = 'Requested document';
-      let action = 'ready';
-      
-      if (filename.startsWith('INV-')) {
-        docType = 'Invoice';
-        action = 'created';
-      } else if (filename.startsWith('QT-')) {
-        docType = 'Quotation';
-        action = 'created';
-      } else if (filename.startsWith('PO-')) {
-        docType = 'Purchase Order';
-        action = 'created';
-      } else if (filename.toLowerCase().includes('invoice')) {
-        docType = 'Invoice';
-        action = 'created';
-      } else if (filename.toLowerCase().includes('quotation') || filename.toLowerCase().includes('quote')) {
-        docType = 'Quotation';
-        action = 'created';
-      } else if (filename.toLowerCase().includes('purchase')) {
-        docType = 'Purchase Order';
-        action = 'created';
-      }
-      
-      title.textContent = docType + ' ' + action + ': ' + filename;
-      node.appendChild(title);
-
-      const dlBtn = document.createElement('button');
-      dlBtn.className = 'download-btn';
-      dlBtn.textContent = 'Download PDF';
-      dlBtn.addEventListener('click', () => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-      });
-      node.appendChild(dlBtn);
-      return node;
-    }
-
-    const observer = new MutationObserver(() => {
-      bottomSentinel.scrollIntoView({behavior:'smooth', block:'end'});
-    });
-    observer.observe(messagesEl, {childList:true, subtree:false});
-
-    appendMessage(createMessageNode({text: 'Connected.', role:'bot'}));
-    messageInput.focus();
-  </script>
-</body>
-</html>
+  } catch (err) {
+    typingNode.remove();
+    appendMessage(createMessageNode({text: 'Error: ' + (err.message || String(err)), role:'bot'}));
+    console.error('Send error', err);
+  } finally {
+    waitingForResponse = false;
+    sendBtn.disabled = false;
+  }
+}
